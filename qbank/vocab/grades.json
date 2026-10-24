@@ -1,0 +1,18 @@
+{
+  "name": "年級標籤",
+  "version": "2026-10-24-draft",
+  "note": "建議教學年級一律用國小一至六年級代碼，可複選。原始資料的「中年級／高年級」另存於題目原始欄位，不自動轉換成單一年級。",
+  "teaching_grades": [
+    { "code": "G1", "label": "一年級" },
+    { "code": "G2", "label": "二年級" },
+    { "code": "G3", "label": "三年級" },
+    { "code": "G4", "label": "四年級" },
+    { "code": "G5", "label": "五年級" },
+    { "code": "G6", "label": "六年級" }
+  ],
+  "source_grade_bands": [
+    { "label": "低年級", "covers": ["G1", "G2"] },
+    { "label": "中年級", "covers": ["G3", "G4"] },
+    { "label": "高年級", "covers": ["G5", "G6"] }
+  ]
+}

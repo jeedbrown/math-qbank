@@ -1,0 +1,5 @@
+qbank/data/
+qbank/private/
+.wrangler/
+.dev.vars*
+node_modules/

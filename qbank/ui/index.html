@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>題庫分析模組（本機測試版）</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#1f2933; --muted:#616e7c; --line:#d9dee5; --accent:#2f6fed; --ok:#2e8b57; --warn:#c77d00; --bad:#c0392b; --tag:#eef2ff; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: -apple-system, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif; background:var(--bg); color:var(--ink); font-size:15px; line-height:1.55; }
+  header { background:#fff; border-bottom:1px solid var(--line); padding:10px 16px; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  header h1 { font-size:18px; margin:0 12px 0 0; }
+  header .note { color:var(--muted); font-size:13px; }
+  nav { display:flex; flex-wrap:wrap; gap:4px; padding:8px 16px 0; }
+  nav button { border:1px solid var(--line); background:#fff; padding:6px 12px; border-radius:8px 8px 0 0; cursor:pointer; font-size:14px; }
+  nav button.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+  main { padding:12px 16px 40px; max-width:1400px; }
+  section.tab { display:none; } section.tab.active { display:block; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin-bottom:12px; }
+  .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap:10px; }
+  .stat { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px; }
+  .stat b { display:block; font-size:26px; }
+  .stat span { color:var(--muted); font-size:13px; }
+  table { border-collapse:collapse; width:100%; font-size:14px; }
+  th, td { border-bottom:1px solid var(--line); padding:6px 8px; text-align:left; vertical-align:top; }
+  th { background:#fafbfc; position:sticky; top:0; }
+  tr:hover td { background:#fbfcff; }
+  .tag { display:inline-block; background:var(--tag); border-radius:6px; padding:1px 7px; margin:1px 3px 1px 0; font-size:13px; }
+  .tag.ok { background:#e6f4ec; color:var(--ok); } .tag.warn { background:#fff4e0; color:var(--warn); } .tag.bad { background:#fdecea; color:var(--bad); } .tag.muted { background:#eef0f3; color:var(--muted); }
+  button.btn { background:var(--accent); color:#fff; border:0; padding:7px 14px; border-radius:8px; cursor:pointer; font-size:14px; }
+  button.btn.secondary { background:#fff; color:var(--ink); border:1px solid var(--line); }
+  button.btn.ok { background:var(--ok); } button.btn.bad { background:var(--bad); } button.btn.warn { background:var(--warn); }
+  button.btn:disabled { opacity:.5; cursor:not-allowed; }
+  input, select, textarea { font:inherit; padding:6px 8px; border:1px solid var(--line); border-radius:8px; background:#fff; }
+  textarea { width:100%; min-height:120px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size:13px; }
+  .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:6px 0; }
+  .two { display:grid; grid-template-columns: 1fr 1fr; gap:12px; } @media (max-width: 900px) { .two { grid-template-columns: 1fr; } }
+  .muted { color:var(--muted); } .small { font-size:13px; }
+  pre { white-space:pre-wrap; word-break:break-word; background:#f3f5f8; padding:8px; border-radius:8px; font-size:13px; max-height:360px; overflow:auto; }
+  .qtext { white-space:pre-wrap; background:#fffdf5; border:1px solid #f1e6c2; border-radius:8px; padding:8px; }
+  .field { margin:6px 0; } .field label { display:block; font-weight:600; font-size:13px; color:var(--muted); }
+  .field textarea { min-height:60px; font-family:inherit; font-size:14px; }
+  .msg { padding:8px 10px; border-radius:8px; margin:8px 0; } .msg.ok { background:#e6f4ec; } .msg.bad { background:#fdecea; } .msg.warn { background:#fff4e0; }
+  a.link { color:var(--accent); cursor:pointer; text-decoration:underline; }
+  details summary { cursor:pointer; }
+  .sticky-actions { position:sticky; bottom:0; background:#fff; padding:8px 0; border-top:1px solid var(--line); }
+</style>
+</head>
+<body>
+<header>
+  <h1>題庫分析模組</h1>
+  <span class="note">本機測試版・不使用付費 API・不寫入正式題庫　<span id="dbPath" class="small"></span></span>
+</header>
+<nav id="nav">
+  <button data-tab="overview" class="active">題庫總覽</button>
+  <button data-tab="import">匯入題目</button>
+  <button data-tab="search">題目搜尋</button>
+  <button data-tab="detail">單題分析／審核</button>
+  <button data-tab="batch">批次 AI 分析</button>
+  <button data-tab="variants">類題工作區</button>
+  <button data-tab="vocab">分類規準</button>
+  <button data-tab="export">匯出與備份</button>
+</nav>
+<main>
+
+<section class="tab active" id="tab-overview">
+  <div class="grid" id="statGrid"></div>
+  <div class="card">
+    <h3>待審核清單</h3>
+    <div id="reviewQueue" class="small"></div>
+  </div>
+  <div class="card small muted">所有數字由工作資料庫即時計算。「尚未分析」指沒有對應目前題目版本的待審核或已確認分析。</div>
+</section>
+
+<section class="tab" id="tab-import">
+  <div class="card">
+    <h3>匯入原始題庫（CSV）</h3>
+    <p class="small muted">原始 21 欄全部保留、不修改。同一題（題庫來源＋套別＋題號）重複匯入不會建新題；內容變動會另存新版本，不覆蓋教師已審核的結果。請用 Google 試算表「下載為 CSV」的檔案；超連結公式只會匯入顯示文字。</p>
+    <div class="row"><input type="file" id="importFile" accept=".csv,.json"> <button class="btn secondary" id="btnPreview">預覽</button> <button class="btn" id="btnCommit" disabled>確認匯入</button></div>
+    <div id="importResult"></div>
+  </div>
+</section>
+
+<section class="tab" id="tab-search">
+  <div class="card">
+    <div class="row">
+      <input id="sq" placeholder="關鍵字／題號／題目 ID" style="min-width:220px">
+      <select id="sBank"><option value="">題庫來源</option></select>
+      <select id="sSet"><option value="">套別</option></select>
+      <select id="sSrcGrade"><option value="">原始年級</option></select>
+      <select id="sGrade"><option value="">建議年級</option><option>G1</option><option>G2</option><option>G3</option><option>G4</option><option>G5</option><option>G6</option></select>
+      <input id="sCode" placeholder="課綱代碼 例 N-3-3" style="width:150px">
+      <input id="sUnit" placeholder="單元代碼 例 U-N-04" style="width:150px">
+      <input id="sSkill" placeholder="數學技能" style="width:130px">
+      <input id="sMis" placeholder="迷思概念關鍵字" style="width:140px">
+      <select id="sProject"><option value="">課程企劃</option></select>
+      <select id="sStatus"><option value="">審核狀態</option><option value="none">尚未分析</option><option value="pending">待審核</option><option value="confirmed">已確認</option><option value="returned">已退回</option></select>
+      <select id="sFlag"><option value="">品質旗標</option><option value="figure_dependent">含圖需看PDF</option><option value="missing_answer_1">缺類題一答案</option><option value="missing_answer_2">缺類題二答案</option><option value="missing_video">缺影片</option></select>
+      <button class="btn" id="btnSearch">搜尋</button>
+      <button class="btn secondary" id="btnSelectAll">全選結果</button>
+      <span class="small muted" id="selCount"></span>
+    </div>
+    <div style="overflow:auto; max-height:70vh"><table id="searchTable"><thead><tr><th></th><th>題目 ID</th><th>來源／套別</th><th>題號</th><th>原始年級</th><th>主題</th><th>對應課程</th><th>分析狀態</th><th>旗標</th><th>AI 類題</th></tr></thead><tbody></tbody></table></div>
+    <div class="row sticky-actions"><button class="btn" id="btnToBatch">勾選題目 → 產生 AI 分析指令</button> <button class="btn secondary" id="btnToVariant">勾選題目 → 產生類題指令</button></div>
+  </div>
+</section>
+
+<section class="tab" id="tab-detail">
+  <div class="card"><div class="row"><input id="detailId" placeholder="題目 ID" style="min-width:220px"><button class="btn" id="btnLoadDetail">載入</button></div></div>
+  <div id="detail"></div>
+</section>
+
+<section class="tab" id="tab-batch">
+  <div class="card">
+    <h3>1. 產生 AI 分析指令</h3>
+    <p class="small muted">模組不會自己連線到任何 AI。請把指令複製到你現有的 AI 訂閱服務（ChatGPT、Claude 等）貼上執行，再把回傳的 JSON 貼回第 2 步。每批依文字長度與題數切分，已完成的題目不會重複送出。</p>
+    <div class="row">
+      <label><input type="radio" name="batchMode" value="pending" checked> 只分析尚未完成的題目</label>
+      <label><input type="radio" name="batchMode" value="selected"> 只分析搜尋頁勾選的題目（<span id="batchSel">0</span> 題）</label>
+      <label>每批最多 <input type="number" id="maxItems" value="8" min="1" max="30" style="width:70px"> 題</label>
+      <label>每批文字上限 <input type="number" id="maxChars" value="6000" min="500" step="500" style="width:90px"> 字</label>
+      <label><input type="checkbox" id="allCodes"> 附完整 1–6 年級代碼表</label>
+      <button class="btn" id="btnMakeJobs">產生指令</button>
+    </div>
+    <div id="jobsOut"></div>
+  </div>
+  <div class="card">
+    <h3>2. 貼回 AI 結果（JSON）</h3>
+    <div class="row"><label>對應工作編號（選填）<input id="jobId" type="number" style="width:90px"></label><input type="file" id="aiFile" accept=".json,.txt"></div>
+    <textarea id="aiText" placeholder='{"results": [ ... ]}'></textarea>
+    <div class="row"><button class="btn" id="btnImportAi">驗證並匯入為待審核</button></div>
+    <div id="aiImportOut"></div>
+  </div>
+  <div class="card"><h3>歷史工作</h3><div id="jobList" class="small"></div></div>
+</section>
+
+<section class="tab" id="tab-variants">
+  <div class="card">
+    <h3>1. 產生類題指令</h3>
+    <div class="row">
+      <span>對象：搜尋頁勾選的 <span id="varSel">0</span> 題</span>
+      <label><input type="checkbox" value="keep_concept" checked disabled> 保留核心概念</label>
+      <label><input type="checkbox" class="vopt" value="change_numbers" checked> 更換數字</label>
+      <label><input type="checkbox" class="vopt" value="change_context"> 更換生活情境</label>
+      <label><input type="checkbox" class="vopt" value="more_complex"> 增加複雜度</label>
+      <label><input type="checkbox" class="vopt" value="less_complex"> 降低複雜度</label>
+      <label><input type="checkbox" class="vopt" value="alt_method"> 不同解法</label>
+      <label>每題 <input type="number" id="varCount" value="2" min="1" max="5" style="width:60px"> 題</label>
+      <button class="btn" id="btnVarJobs">產生指令</button>
+    </div>
+    <div id="varJobsOut"></div>
+  </div>
+  <div class="card">
+    <h3>2. 貼回類題結果（JSON）</h3>
+    <div class="row"><label>對應工作編號（選填）<input id="varJobId" type="number" style="width:90px"></label></div>
+    <textarea id="varText" placeholder='{"results": [ ... ]}'></textarea>
+    <div class="row"><button class="btn" id="btnImportVar">驗證、自動驗算並匯入</button></div>
+    <div id="varImportOut"></div>
+  </div>
+  <div class="card">
+    <h3>3. AI 類題清單</h3>
+    <div class="row"><select id="varStatus"><option value="">全部 AI 類題</option><option value="auto_passed">驗算通過</option><option value="auto_failed">驗算失敗</option><option value="unverified">無法自動驗算</option><option value="teacher_confirmed">教師已核准</option><option value="rejected">已退回</option></select><button class="btn secondary" id="btnLoadVars">重新載入</button></div>
+    <p class="small muted">「驗算通過」只代表算式數值與答案一致，題意是否合理仍需教師確認；只有「教師已核准」才算確認正確。原題與既有類題一、類題二永遠不會被覆蓋。</p>
+    <div id="varList"></div>
+  </div>
+</section>
+
+<section class="tab" id="tab-vocab">
+  <div class="card">
+    <h3>分類規準（唯讀）</h3>
+    <div id="vocabSummary"></div>
+    <div class="row"><input id="vocabQ" placeholder="搜尋課綱代碼或關鍵字" style="min-width:240px"><button class="btn secondary" id="btnVocabSearch">搜尋</button></div>
+    <div style="max-height:50vh; overflow:auto"><table id="vocabTable"><thead><tr><th>代碼</th><th>年級</th><th>主題</th><th>條目</th><th>說明</th><th>學習表現</th></tr></thead><tbody></tbody></table></div>
+  </div>
+  <div class="two">
+    <div class="card"><h3>數學技能詞彙</h3><div id="skillsBox" class="small"></div></div>
+    <div class="card"><h3>單元分類（草案）／活動類型</h3><div id="unitsBox" class="small"></div></div>
+  </div>
+  <div class="card">
+    <h3>新增詞彙建議</h3>
+    <p class="small muted">建議只會記錄在工作資料庫，正式共用詞庫不由此頁修改；核准後由管理者更新 vocab 檔案並調整版本。</p>
+    <div class="row"><select id="sugKind"><option value="skill">數學技能</option><option value="unit">單元</option><option value="reasoning">推理類別</option><option value="other">其他</option></select><input id="sugTerm" placeholder="詞彙"><input id="sugCtx" placeholder="理由／用在哪一題" style="min-width:260px"><button class="btn" id="btnSuggest">送出建議</button></div>
+    <div id="sugList" class="small"></div>
+  </div>
+</section>
+
+<section class="tab" id="tab-export">
+  <div class="card">
+    <h3>匯出</h3>
+    <div class="row">
+      <a class="btn" href="/api/export?what=confirmed&format=csv" download>已確認分析（CSV）</a>
+      <a class="btn" href="/api/export?what=confirmed&format=json" download>已確認分析（JSON）</a>
+      <a class="btn secondary" href="/api/export?what=pending&format=csv" download>待審核清單（CSV）</a>
+      <a class="btn secondary" href="/api/export?what=anomalies&format=csv" download>分類異常清單（CSV）</a>
+      <a class="btn secondary" href="/api/export?what=links&format=csv" download>題目與課程關聯（CSV）</a>
+      <a class="btn secondary" href="/api/export?what=questions&format=csv" download>原始題目（21 欄＋ID，CSV）</a>
+      <a class="btn warn" href="/api/export?what=backup&format=json" download>完整備份（JSON）</a>
+    </div>
+    <p class="small muted">正式題庫寫回介面本次不啟用；匯出檔供教師檢視與日後整合使用。原題為出版社資料，匯出檔請勿放到公開位置。</p>
+  </div>
+  <div class="card"><h3>資料一致性檢查</h3><button class="btn secondary" id="btnCheck">執行檢查</button><div id="checkOut"></div></div>
+</section>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+const api = async (p, opts = {}) => {
+  const r = await fetch(p, { headers: { 'Content-Type': 'application/json' }, ...opts, body: opts.body ? JSON.stringify(opts.body) : undefined });
+  const ct = r.headers.get('content-type') || '';
+  const body = ct.includes('json') ? await r.json() : await r.text();
+  if (!r.ok) throw new Error(body && body.error ? body.error : ('HTTP ' + r.status));
+  return body;
+};
+const GRADE_LABEL = { G1:'一年級', G2:'二年級', G3:'三年級', G4:'四年級', G5:'五年級', G6:'六年級' };
+const STATUS_LABEL = { pending:'待審核', confirmed:'已確認', returned:'已退回', superseded:'已被取代', none:'尚未分析' };
+const VSTATUS = { unverified:'無法自動驗算', auto_passed:'驗算通過', auto_failed:'驗算失敗', teacher_confirmed:'教師已核准', rejected:'已退回' };
+const FLAG_LABEL = { missing_answer_1:'缺類題一答案', missing_answer_2:'缺類題二答案', missing_variant_1:'缺類題一', missing_variant_2:'缺類題二', figure_dependent:'含圖需看PDF', missing_pdf:'缺PDF', missing_video:'缺影片', missing_grade:'缺年級' };
+let VOCAB = null;
+const selected = new Set();
+
+// 分頁
+document.querySelectorAll('#nav button').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
+function showTab(name) {
+  document.querySelectorAll('#nav button').forEach(x => x.classList.toggle('active', x.dataset.tab === name));
+  document.querySelectorAll('section.tab').forEach(x => x.classList.toggle('active', x.id === 'tab-' + name));
+  if (name === 'overview') loadOverview();
+  if (name === 'batch') { $('#batchSel').textContent = selected.size; loadJobs(); }
+  if (name === 'variants') { $('#varSel').textContent = selected.size; loadVariants(); }
+  if (name === 'vocab') loadVocab();
+}
+
+// 總覽
+async function loadOverview() {
+  const o = await api('/api/overview');
+  $('#dbPath').textContent = '資料庫：' + o.dbPath;
+  $('#statGrid').innerHTML = Object.entries(o.stats).map(([k, v]) => `<div class="stat"><b>${v}</b><span>${esc(k)}</span></div>`).join('');
+  fillSelect('#sBank', o.facets.source_bank); fillSelect('#sSet', o.facets.set_name); fillSelect('#sSrcGrade', o.facets.source_grade); fillSelect('#sProject', o.facets.projects);
+  const q = await api('/api/review-queue?status=pending');
+  $('#reviewQueue').innerHTML = q.length ? '<table><tr><th>分析</th><th>題目</th><th>來源</th><th>主題</th><th>分析來源</th><th>建立時間</th><th></th></tr>' + q.map(r => `<tr><td>#${r.id}</td><td><a class="link" onclick="openDetail('${r.question_id}')">${r.question_id}</a>${r.stale ? ' <span class="tag bad">題目已更新</span>' : ''}</td><td>${esc(r.source_bank)}／${esc(r.set_name)}／${esc(r.item_no)}</td><td>${esc(r.topic)}</td><td>${esc(r.source)}</td><td>${esc(r.created_at.slice(0, 16))}</td><td><a class="link" onclick="openDetail('${r.question_id}')">審核</a></td></tr>`).join('') + '</table>' : '<span class="muted">目前沒有待審核的分析。</span>';
+}
+function fillSelect(sel, items) { const el = $(sel); const first = el.options[0].outerHTML; el.innerHTML = first + items.map(i => `<option value="${esc(i.v)}">${esc(i.v)}（${i.c}）</option>`).join(''); }
+
+// 匯入
+let importCsvText = null;
+$('#btnPreview').addEventListener('click', async () => {
+  const f = $('#importFile').files[0]; if (!f) return alert('請先選擇檔案');
+  importCsvText = await f.text();
+  try {
+    const p = await api('/api/import/preview', { method: 'POST', body: { csv: importCsvText } });
+    const c = p.columns;
+    $('#importResult').innerHTML = `<div class="msg ${c.requiredMissing.length ? 'bad' : (c.missing.length || c.extra.length ? 'warn' : 'ok')}">欄位偵測：${c.header.length} 欄${c.sameOrder ? '，與正式 21 欄完全相同' : ''}${c.missing.length ? '；缺少：' + esc(c.missing.join('、')) : ''}${c.extra.length ? '；多出：' + esc(c.extra.join('、')) : ''}</div>
+      <div class="row"><span class="tag ok">新增 ${p.summary.insert}</span><span class="tag warn">新版本 ${p.summary.new_version}</span><span class="tag muted">不變 ${p.summary.unchanged}</span><span class="tag bad">拒絕 ${p.summary.reject}</span></div>
+      <div style="max-height:40vh;overflow:auto"><table><tr><th>列</th><th>動作</th><th>題目 ID</th><th>套別／題號</th><th>主題</th><th>問題／旗標</th></tr>${p.items.map(i => `<tr><td>${i.rowNumber}</td><td>${i.action}</td><td>${i.questionId || ''}</td><td>${esc(i.preview.套別)}／${esc(i.preview.題號)}</td><td>${esc(i.preview.主題)}</td><td>${i.problems.map(x => `<span class="tag bad">${esc(x)}</span>`).join('')}${i.flags.map(x => `<span class="tag warn">${esc(FLAG_LABEL[x.flag] || x.flag)}</span>`).join('')}</td></tr>`).join('')}</table></div>`;
+    $('#btnCommit').disabled = !!c.requiredMissing.length;
+  } catch (e) { $('#importResult').innerHTML = `<div class="msg bad">${esc(e.message)}</div>`; }
+});
+$('#btnCommit').addEventListener('click', async () => {
+  try {
+    const r = await api('/api/import/commit', { method: 'POST', body: { csv: importCsvText, filename: $('#importFile').files[0].name } });
+    $('#importResult').innerHTML = `<div class="msg ok">匯入完成（批次 #${r.result.batchId}）：新增 ${r.result.inserted}、新版本 ${r.result.newVersions}、不變 ${r.result.unchanged}、拒絕 ${r.result.rejected}。既有類題鏡像 ${r.mirroredExistingVariants} 筆。</div>` + (r.result.rejectedRows.length ? '<pre>' + esc(JSON.stringify(r.result.rejectedRows, null, 1)) + '</pre>' : '');
+    $('#btnCommit').disabled = true;
+  } catch (e) { $('#importResult').innerHTML = `<div class="msg bad">${esc(e.message)}</div>`; }
+});
+
+// 搜尋
+$('#btnSearch').addEventListener('click', doSearch);
+async function doSearch() {
+  const params = new URLSearchParams();
+  const map = { q:'#sq', source_bank:'#sBank', set_name:'#sSet', source_grade:'#sSrcGrade', grade:'#sGrade', code:'#sCode', unit:'#sUnit', skill:'#sSkill', misconception:'#sMis', project:'#sProject', review_status:'#sStatus', flag:'#sFlag' };
+  for (const [k, s] of Object.entries(map)) { const v = $(s).value.trim(); if (v) params.set(k, v); }
+  const rows = await api('/api/questions?' + params.toString());
+  $('#searchTable tbody').innerHTML = rows.map(r => `<tr><td><input type="checkbox" data-id="${r.id}" ${selected.has(r.id) ? 'checked' : ''}></td><td><a class="link" onclick="openDetail('${r.id}')">${r.id}</a></td><td>${esc(r.source_bank)}／${esc(r.set_name)}</td><td>${esc(r.item_no)}</td><td>${esc(r.source_grade)}</td><td>${esc(r.topic)}</td><td>${esc(r.course_ref)}</td><td><span class="tag ${r.analysis_status === 'confirmed' ? 'ok' : r.analysis_status === 'pending' ? 'warn' : 'muted'}">${STATUS_LABEL[r.analysis_status || 'none']}</span></td><td>${r.flag_count ? `<span class="tag warn">${r.flag_count}</span>` : ''}</td><td>${r.ai_variants || ''}</td></tr>`).join('') || '<tr><td colspan="10" class="muted">沒有符合的題目</td></tr>';
+  document.querySelectorAll('#searchTable input[type=checkbox]').forEach(cb => cb.addEventListener('change', () => { cb.checked ? selected.add(cb.dataset.id) : selected.delete(cb.dataset.id); updateSel(); }));
+  updateSel();
+}
+function updateSel() { $('#selCount').textContent = `已勾選 ${selected.size} 題`; $('#batchSel').textContent = selected.size; $('#varSel').textContent = selected.size; }
+$('#btnSelectAll').addEventListener('click', () => { document.querySelectorAll('#searchTable input[type=checkbox]').forEach(cb => { cb.checked = true; selected.add(cb.dataset.id); }); updateSel(); });
+$('#btnToBatch').addEventListener('click', () => { document.querySelector('input[name=batchMode][value=selected]').checked = true; showTab('batch'); });
+$('#btnToVariant').addEventListener('click', () => showTab('variants'));
+
+// 單題
+$('#btnLoadDetail').addEventListener('click', () => openDetail($('#detailId').value.trim()));
+async function openDetail(id) {
+  showTab('detail'); $('#detailId').value = id;
+  try { renderDetail(await api('/api/questions/' + encodeURIComponent(id))); }
+  catch (e) { $('#detail').innerHTML = `<div class="msg bad">${esc(e.message)}</div>`; }
+}
+function renderDetail(q) {
+  const raw = q.raw;
+  const cur = q.analyses.find(a => a.review_status === 'confirmed');
+  const pend = q.analyses.filter(a => a.review_status === 'pending');
+  const other = q.analyses.filter(a => a !== cur && !pend.includes(a));
+  $('#detail').innerHTML = `
+  <div class="two">
+    <div class="card">
+      <h3>原始題目 <span class="small muted">${q.id}・版本 ${q.current_version}</span></h3>
+      <div class="row small"><span class="tag">${esc(raw['題庫來源'])}</span><span class="tag">${esc(raw['年級'])}</span><span class="tag">${esc(raw['套別'])}</span><span class="tag">第 ${esc(raw['週次'])} 週・第 ${esc(raw['題號'])} 題</span><span class="tag">${esc(raw['對應課程'])}</span></div>
+      <p><b>${esc(raw['主題'])}</b></p>
+      <div class="qtext">${esc(raw['題目'])}</div>
+      ${q.flags.length ? '<p>' + q.flags.map(f => `<span class="tag warn" title="${esc(f.detail)}">${esc(FLAG_LABEL[f.flag] || f.flag)}</span>`).join('') + '</p>' : ''}
+      <details><summary>類題一／類題二（原始資料，唯讀）</summary>
+        <p><b>類題一</b><div class="qtext">${esc(raw['類題一'])}</div><span class="small">答：${esc(raw['類題一答案'])}</span></p>
+        <p><b>類題二</b><div class="qtext">${esc(raw['類題二'])}</div><span class="small">答：${esc(raw['類題二答案'])}</span></p></details>
+      <details><summary>其他原始欄位</summary><table class="small">${['影片來源','影片1','影片2','影片3','影片4','影片5','題目PDF','PDF頁碼','備註'].map(c => `<tr><th>${c}</th><td>${esc(raw[c])}</td></tr>`).join('')}</table>
+        <p class="small muted">版本紀錄：${q.versions.map(v => `v${v.version}（${esc(v.source_file)} 第 ${v.source_row} 列，${v.imported_at.slice(0,10)}）`).join('；')}</p></details>
+      <h4>課程關聯</h4>
+      <div id="links">${q.links.map(l => `<span class="tag">${esc(l.project)}／${esc(l.lesson)}${l.position ? '（' + l.position + '）' : ''} <a class="link" onclick="unlink('${q.id}','${esc(l.project)}','${esc(l.lesson)}')">移除</a></span>`).join('') || '<span class="muted small">尚無關聯</span>'}</div>
+      <div class="row"><input id="lkProject" placeholder="課程企劃（例：推理數學30堂）" style="width:200px"><input id="lkLesson" placeholder="堂次／單元" style="width:140px"><input id="lkPos" type="number" placeholder="順序" style="width:70px"><button class="btn secondary" onclick="addLink('${q.id}')">加入關聯</button></div>
+    </div>
+    <div class="card">
+      <h3>教師最後確認</h3>
+      ${cur ? renderAnalysis(cur, q, true) : '<p class="muted">尚無已確認的分析。</p>'}
+    </div>
+  </div>
+  ${pend.map(a => `<div class="card"><h3>AI／待審核建議 <span class="small muted">分析 #${a.id}（第 ${a.analysis_no} 次，${esc(a.source)}）</span> ${a.stale ? '<span class="tag bad">題目已更新，此分析可能失效</span>' : ''} ${a.rubric_outdated ? '<span class="tag warn">規準版本已變更，建議重新檢查</span>' : ''}</h3>${renderAnalysis(a, q, false)}${renderReviewForm(a, q)}</div>`).join('')}
+  ${other.length ? `<div class="card"><details><summary>歷史分析（${other.length}）</summary>${other.map(a => `<h4>#${a.id}・${STATUS_LABEL[a.review_status] || a.review_status}・${esc(a.created_at.slice(0,16))}</h4>${renderAnalysis(a, q, false)}${a.review_status === 'returned' ? `<button class="btn secondary" onclick="reviewAct(${a.id},'reopen')">重新審核</button>` : ''}`).join('')}</details></div>` : ''}
+  <div class="card"><h3>類題（${q.variants.length}）</h3>${q.variants.map(renderVariant).join('') || '<span class="muted">無</span>'}</div>`;
+}
+function renderAnalysis(a, q, isFinal) {
+  const p = a.payload;
+  const w = (a.validation && a.validation.warnings) || [];
+  return `<div class="small">
+    <div class="field"><label>建議年級</label>${(p.suggested_grades || []).map(g => `<span class="tag">${GRADE_LABEL[g] || g}</span>`).join('') || '—'}<div>${esc(p.grade_reason)}</div></div>
+    <div class="field"><label>課綱代碼（教育部學習內容代碼）</label>${(p.curriculum_codes || []).map(c => `<div><span class="tag ${c.code === '待確認' ? 'warn' : 'ok'}">${esc(c.code)}</span> ${esc(c.title || '')} <span class="muted">${esc(c.reason)}</span></div>`).join('') || '—'}</div>
+    <div class="field"><label>對應單元</label>${(p.units || []).map(u => `<span class="tag">${esc(unitLabel(u))}</span>`).join('') || '—'}</div>
+    <div class="field"><label>數學技能</label>${(p.skills || []).map(s => `<span class="tag ${s.status === 'approved' ? 'ok' : 'warn'}" title="${s.status === 'approved' ? '正式詞彙' : '未核准：已記入詞彙建議'}">${esc(s.term)}${s.status === 'approved' ? '' : '（建議）'}</span>`).join('') || '—'}</div>
+    <div class="field"><label>題目核心概念</label>${esc(p.core_concept)}</div>
+    <div class="field"><label>題目條件分析</label>已知：${esc((p.conditions?.known || []).join('；'))}<br>未知：${esc((p.conditions?.unknown || []).join('；'))}<br>限制：${esc((p.conditions?.constraints || []).join('；'))}</div>
+    <div class="field"><label>推理歷程</label><ol>${(p.reasoning_process || []).map(s => `<li>${esc(s)}</li>`).join('')}</ol></div>
+    <div class="field"><label>解題策略</label>${(p.strategies || []).map(s => `<div>・${esc(s.name)} <span class="muted">${esc(s.reason)}</span></div>`).join('') || '—'}</div>
+    <div class="field"><label>迷思概念</label>${(p.misconceptions || []).map(m => `<div class="card" style="margin:4px 0;padding:8px"><span class="tag ${m.evidence === 'observed' ? 'bad' : 'muted'}">${m.evidence === 'observed' ? '已觀察' : '預測性迷思概念'}</span> <b>${esc(m.description)}</b><br>錯誤思路：${esc(m.wrong_path)}<br>正確概念：${esc(m.correct_concept)}<br>教師追問：${esc(m.teacher_probe)}</div>`).join('') || '—'}</div>
+    <div class="field"><label>教師追問</label><ul>${(p.teacher_probes || []).map(s => `<li>${esc(s)}</li>`).join('')}</ul></div>
+    <div class="field"><label>答案與詳解狀態／題目完整性</label>${esc({has:'已有',missing:'缺少',needs_check:'待驗算',verified:'已驗證'}[p.answer_status] || p.answer_status)}／${esc({complete:'完整',missing_figure:'缺圖',missing_condition:'缺條件',doubtful:'疑義'}[p.completeness] || p.completeness)}</div>
+    <div class="field"><label>分類依據</label>${esc(p.rationale)}</div>
+    <div class="muted">分析來源：${esc(a.source)}・規準版本：${esc(a.rubric_version)}・建立：${esc(a.created_at.slice(0,16))}${isFinal ? '・狀態：已確認' : ''}</div>
+    ${w.length ? `<div class="msg warn">匯入時的提醒：${w.map(esc).join('；')}</div>` : ''}
+  </div>`;
+}
+function unitLabel(code) { if (!VOCAB) return code; const u = [...VOCAB.units.level1, ...VOCAB.units.level2_draft].find(x => x.code === code); return u ? `${code} ${u.label}` : code; }
+function renderReviewForm(a, q) {
+  const p = a.payload;
+  return `<details><summary><b>教師審核</b>（接受、修改後接受、或退回）</summary>
+    <div class="two">
+      <div class="field"><label>建議年級（逗號分隔，G1–G6）</label><input id="m_grades_${a.id}" value="${esc((p.suggested_grades||[]).join(','))}"></div>
+      <div class="field"><label>年級判斷理由</label><input id="m_gr_${a.id}" value="${esc(p.grade_reason)}"></div>
+      <div class="field"><label>課綱代碼（每行一個：代碼｜理由）</label><textarea id="m_codes_${a.id}">${esc((p.curriculum_codes||[]).map(c => c.code + '｜' + (c.reason||'')).join('\n'))}</textarea></div>
+      <div class="field"><label>數學技能（逗號分隔）</label><input id="m_skills_${a.id}" value="${esc((p.skills||[]).map(s => s.term).join(','))}"></div>
+      <div class="field"><label>對應單元代碼（逗號分隔）</label><input id="m_units_${a.id}" value="${esc((p.units||[]).join(','))}"></div>
+      <div class="field"><label>題目核心概念</label><input id="m_core_${a.id}" value="${esc(p.core_concept)}"></div>
+    </div>
+    <div class="row"><input id="m_reviewer_${a.id}" placeholder="審核者" style="width:120px"><input id="m_reason_${a.id}" placeholder="修改／退回原因" style="min-width:260px">
+      <button class="btn ok" onclick="reviewAct(${a.id},'confirm')">接受</button>
+      <button class="btn" onclick="reviewModify(${a.id})">修改後接受</button>
+      <button class="btn bad" onclick="reviewAct(${a.id},'return')">退回</button></div></details>`;
+}
+async function reviewAct(id, action) {
+  try { await api(`/api/analyses/${id}/review`, { method: 'POST', body: { action, reviewer: ($('#m_reviewer_' + id) || {}).value, reason: ($('#m_reason_' + id) || {}).value } }); openDetail($('#detailId').value); }
+  catch (e) { alert(e.message); }
+}
+async function reviewModify(id) {
+  const g = v => ($('#' + v + '_' + id) || {}).value || '';
+  const payload = {
+    suggested_grades: g('m_grades').split(',').map(s => s.trim()).filter(Boolean), grade_reason: g('m_gr'),
+    curriculum_codes: g('m_codes').split('\n').map(s => s.trim()).filter(Boolean).map(l => { const [code, reason] = l.split('｜'); return { code: code.trim(), reason: (reason || '').trim() }; }),
+    skills: g('m_skills').split(',').map(s => s.trim()).filter(Boolean), units: g('m_units').split(',').map(s => s.trim()).filter(Boolean), core_concept: g('m_core'),
+  };
+  try { await api(`/api/analyses/${id}/review`, { method: 'POST', body: { action: 'modify', reviewer: g('m_reviewer'), reason: g('m_reason'), payload } }); openDetail($('#detailId').value); }
+  catch (e) { alert(e.message); }
+}
+async function addLink(qid) { try { await api('/api/links', { method: 'POST', body: { question_id: qid, project: $('#lkProject').value, lesson: $('#lkLesson').value, position: Number($('#lkPos').value) || null } }); openDetail(qid); } catch (e) { alert(e.message); } }
+async function unlink(qid, project, lesson) { await api(`/api/links?question_id=${encodeURIComponent(qid)}&project=${encodeURIComponent(project)}&lesson=${encodeURIComponent(lesson)}`, { method: 'DELETE' }); openDetail(qid); }
+
+// 批次 AI
+$('#btnMakeJobs').addEventListener('click', async () => {
+  const mode = document.querySelector('input[name=batchMode]:checked').value;
+  try {
+    const r = await api('/api/jobs', { method: 'POST', body: { kind: 'analysis', pendingOnly: mode === 'pending', ids: [...selected], maxItems: Number($('#maxItems').value), maxChars: Number($('#maxChars').value), includeAllCodes: $('#allCodes').checked } });
+    $('#jobsOut').innerHTML = (r.missing.length ? `<div class="msg warn">找不到題目：${esc(r.missing.join(','))}</div>` : '') + r.jobs.map(j => `<div class="card"><div class="row"><b>工作 #${j.jobId}</b><span class="small muted">${j.questionIds.length} 題・${j.chars} 字</span><button class="btn secondary" onclick="copyText(this,'p_${j.jobId}')">複製指令</button></div><pre id="p_${j.jobId}">${esc(j.prompt)}</pre></div>`).join('');
+    loadJobs();
+  } catch (e) { $('#jobsOut').innerHTML = `<div class="msg bad">${esc(e.message)}</div>`; }
+});
+async function copyText(btn, id) { try { await navigator.clipboard.writeText($('#' + id).textContent); btn.textContent = '已複製'; setTimeout(() => btn.textContent = '複製指令', 1500); } catch (e) { alert('無法自動複製，請手動選取文字'); } }
+$('#aiFile').addEventListener('change', async e => { const f = e.target.files[0]; if (f) $('#aiText').value = await f.text(); });
+$('#btnImportAi').addEventListener('click', async () => {
+  try {
+    const r = await api('/api/ai-results', { method: 'POST', body: { kind: 'analysis', text: $('#aiText').value, jobId: Number($('#jobId').value) || null } });
+    $('#aiImportOut').innerHTML = renderImportResult(r); loadJobs();
+  } catch (e) { $('#aiImportOut').innerHTML = `<div class="msg bad">拒絕匯入：${esc(e.message)}</div>`; }
+});
+function renderImportResult(r) {
+  return `<div class="msg ${r.rejected.length ? (r.accepted.length ? 'warn' : 'bad') : 'ok'}">接受 ${r.accepted.length} 筆（已進待審核清單）、拒絕 ${r.rejected.length} 筆。拒絕的項目沒有寫入任何資料。</div>
+  ${r.accepted.filter(a => a.warnings && a.warnings.length).map(a => `<div class="small">✔ <a class="link" onclick="openDetail('${a.question_id}')">${a.question_id}</a> 提醒：${a.warnings.map(esc).join('；')}</div>`).join('')}
+  ${r.rejected.map(x => `<div class="small">✘ 第 ${x.index + 1} 筆 ${esc(x.question_id || '')}：${x.errors.map(esc).join('；')}</div>`).join('')}`;
+}
+async function loadJobs() {
+  const jobs = await api('/api/jobs');
+  $('#jobList').innerHTML = jobs.length ? '<table><tr><th>#</th><th>類型</th><th>題數</th><th>字數</th><th>狀態</th><th>建立</th><th></th></tr>' + jobs.map(j => `<tr><td>${j.id}</td><td>${j.kind === 'variant' ? '類題' : '分析'}</td><td>${JSON.parse(j.question_ids_json).length}</td><td>${j.chars}</td><td>${esc(j.status)}${j.result_json ? ' ' + esc(j.result_json) : ''}</td><td>${esc(j.created_at.slice(0,16))}</td><td><a class="link" onclick="showJob(${j.id})">看指令</a></td></tr>`).join('') + '</table>' : '<span class="muted">尚無</span>';
+}
+async function showJob(id) { const j = await api('/api/jobs/' + id); const target = j.kind === 'variant' ? '#varJobsOut' : '#jobsOut'; $(target).innerHTML = `<div class="card"><div class="row"><b>工作 #${j.id}</b><button class="btn secondary" onclick="copyText(this,'p_${j.id}')">複製指令</button></div><pre id="p_${j.id}">${esc(j.prompt_text)}</pre></div>`; showTab(j.kind === 'variant' ? 'variants' : 'batch'); }
+
+// 類題
+$('#btnVarJobs').addEventListener('click', async () => {
+  if (!selected.size) return alert('請先在「題目搜尋」勾選題目');
+  const options = ['keep_concept', ...[...document.querySelectorAll('.vopt:checked')].map(x => x.value)];
+  try {
+    const r = await api('/api/jobs', { method: 'POST', body: { kind: 'variant', ids: [...selected], options, count: Number($('#varCount').value) } });
+    $('#varJobsOut').innerHTML = r.jobs.map(j => `<div class="card"><div class="row"><b>工作 #${j.jobId}</b><span class="small muted">${j.questionIds.length} 題・${j.chars} 字</span><button class="btn secondary" onclick="copyText(this,'p_${j.jobId}')">複製指令</button></div><pre id="p_${j.jobId}">${esc(j.prompt)}</pre></div>`).join('');
+  } catch (e) { $('#varJobsOut').innerHTML = `<div class="msg bad">${esc(e.message)}</div>`; }
+});
+$('#btnImportVar').addEventListener('click', async () => {
+  try {
+    const options = ['keep_concept', ...[...document.querySelectorAll('.vopt:checked')].map(x => x.value)];
+    const r = await api('/api/ai-results', { method: 'POST', body: { kind: 'variant', text: $('#varText').value, jobId: Number($('#varJobId').value) || null, options } });
+    $('#varImportOut').innerHTML = `<div class="msg ${r.rejected.length ? 'warn' : 'ok'}">接受 ${r.accepted.length} 筆類題、拒絕 ${r.rejected.length} 筆。</div>` + r.accepted.map(a => `<div class="small">✔ ${a.question_id} 類題 #${a.variantId}：<span class="tag ${a.verify.status === 'auto_passed' ? 'ok' : a.verify.status === 'auto_failed' ? 'bad' : 'muted'}">${VSTATUS[a.verify.status]}</span> ${esc(a.verify.detail)}</div>`).join('') + r.rejected.map(x => `<div class="small">✘ 第 ${x.index + 1} 筆 ${esc(x.question_id || '')}：${x.errors.map(esc).join('；')}</div>`).join('');
+    loadVariants();
+  } catch (e) { $('#varImportOut').innerHTML = `<div class="msg bad">拒絕匯入：${esc(e.message)}</div>`; }
+});
+$('#btnLoadVars').addEventListener('click', loadVariants);
+async function loadVariants() {
+  const st = $('#varStatus').value;
+  const vs = await api('/api/variants' + (st ? '?status=' + st : ''));
+  $('#varList').innerHTML = vs.map(renderVariant).join('') || '<span class="muted">沒有類題</span>';
+}
+function renderVariant(v) {
+  const s = v.solution || {};
+  const kindLabel = { existing_1: '既有類題一', existing_2: '既有類題二', ai: 'AI 類題', manual: '人工類題' }[v.kind] || v.kind;
+  return `<div class="card" style="padding:8px 10px"><div class="row"><b>${kindLabel} #${v.variant_no}</b> <span class="small muted">${v.question_id}${v.topic ? '・' + esc(v.topic) : ''}</span> <span class="tag ${v.verify_status === 'teacher_confirmed' ? 'ok' : v.verify_status === 'auto_passed' ? 'ok' : v.verify_status === 'auto_failed' ? 'bad' : 'muted'}">${VSTATUS[v.verify_status] || v.verify_status}</span></div>
+    <div class="qtext">${esc(v.text)}</div><div class="small"><b>答案：</b>${esc(v.answer)}</div>
+    ${s.solution_steps ? `<details class="small"><summary>解題步驟／驗算／教學提示</summary><ol>${s.solution_steps.map(x => `<li>${esc(x)}</li>`).join('')}</ol>${(s.alt_solutions||[]).length ? '<div>其他解法：' + s.alt_solutions.map(esc).join('；') + '</div>' : ''}<div>驗算：${esc(s.verification)}</div><div>教學提示：${esc(s.teaching_tips)}</div>${s.check ? `<div>程式驗算：${esc(JSON.stringify(s.check))}</div>` : ''}</details>` : ''}
+    ${v.verify && v.verify.detail ? `<div class="small muted">${esc(v.verify.detail)}</div>` : ''}
+    ${v.kind === 'ai' || v.kind === 'manual' ? `<div class="row"><input id="vr_${v.id}" placeholder="退回原因" style="width:220px"><button class="btn ok" onclick="variantAct(${v.id},'confirm')">教師核准</button><button class="btn bad" onclick="variantAct(${v.id},'reject')">退回</button>${v.verify_status === 'rejected' || v.verify_status === 'teacher_confirmed' ? `<button class="btn secondary" onclick="variantAct(${v.id},'reopen')">重開</button>` : ''}</div>` : ''}
+  </div>`;
+}
+async function variantAct(id, action) { try { await api(`/api/variants/${id}/review`, { method: 'POST', body: { action, reason: ($('#vr_' + id) || {}).value } }); loadVariants(); if ($('#detailId').value) { /* 同步單題頁 */ } } catch (e) { alert(e.message); } }
+
+// 規準
+async function loadVocab() {
+  VOCAB = await api('/api/vocab');
+  $('#vocabSummary').innerHTML = `<div class="small">規準版本：<code>${esc(VOCAB.rubricVersion)}</code></div><div class="small">課綱代碼 ${VOCAB.curriculum.count} 條（${esc(VOCAB.curriculum.source)}）</div><div class="small muted">${esc(VOCAB.curriculum.source_note)}</div>`;
+  renderVocabTable('');
+  $('#skillsBox').innerHTML = `<div>版本：${esc(VOCAB.skills.version)}　狀態：<span class="tag warn">${esc(VOCAB.skills.status)}</span></div><p class="muted">${esc(VOCAB.skills.note)}</p><div><b>正式（approved）：</b>${VOCAB.skills.approved.map(s => `<span class="tag ok">${esc(s)}</span>`).join('') || '<span class="muted">（空）</span>'}</div><div><b>草案（draft）：</b>${VOCAB.skills.draft.map(s => `<span class="tag warn">${esc(s)}</span>`).join('')}</div>`;
+  $('#unitsBox').innerHTML = `<div>單元版本：${esc(VOCAB.units.version)}　狀態：<span class="tag warn">${esc(VOCAB.units.status)}</span></div>${VOCAB.units.level1.map(l1 => `<div><b>${esc(l1.code)} ${esc(l1.label)}</b>：${VOCAB.units.level2_draft.filter(u => u.parent === l1.code).map(u => `<span class="tag">${esc(u.code)} ${esc(u.label)}</span>`).join('')}</div>`).join('')}<hr><div><b>活動類型（${VOCAB.activity.items.length}）：</b>${VOCAB.activity.items.map(a => `<span class="tag muted">${esc(a)}</span>`).join('')}<div class="muted">${esc(VOCAB.activity.note)}</div></div>`;
+  const sug = await api('/api/suggestions');
+  $('#sugList').innerHTML = sug.length ? '<table><tr><th>類型</th><th>詞彙</th><th>來源</th><th>狀態</th></tr>' + sug.map(s => `<tr><td>${esc(s.kind)}</td><td>${esc(s.term)}</td><td>${esc(s.context)}</td><td>${esc(s.status)}</td></tr>`).join('') + '</table>' : '<span class="muted">尚無建議</span>';
+}
+function renderVocabTable(kw) {
+  const k = kw.trim().toLowerCase();
+  const items = VOCAB.curriculum.items.filter(i => !k || i.code.toLowerCase().includes(k) || i.title.includes(k) || i.description.includes(k));
+  $('#vocabTable tbody').innerHTML = items.map(i => `<tr><td><code>${i.code}</code></td><td>${i.grade}</td><td>${esc(i.theme)}</td><td>${esc(i.title)}</td><td class="small">${esc(i.description)}</td><td class="small">${i.performance_codes.join(' ')}</td></tr>`).join('');
+}
+$('#btnVocabSearch').addEventListener('click', () => renderVocabTable($('#vocabQ').value));
+$('#btnSuggest').addEventListener('click', async () => { try { await api('/api/suggestions', { method: 'POST', body: { kind: $('#sugKind').value, term: $('#sugTerm').value, context: $('#sugCtx').value } }); $('#sugTerm').value = ''; loadVocab(); } catch (e) { alert(e.message); } });
+
+// 匯出
+$('#btnCheck').addEventListener('click', async () => { const r = await api('/api/check'); $('#checkOut').innerHTML = r.ok ? '<div class="msg ok">一致性檢查通過</div>' : `<div class="msg bad">${r.problems.map(esc).join('<br>')}</div>`; });
+
+loadOverview(); loadVocab();
+</script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{
+  "name": "qbank-analysis-module",
+  "version": "0.2.0",
+  "private": true,
+  "description": "數學題庫分析模組（獨立測試版）：匯入、分類驗證、AI 指令交換、教師審核、匯出。零外部相依。",
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/qbank.test.js",
+    "cli": "node cli.js"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  // 題庫分析模組 雲端測試版（獨立 Worker，與本 repo 根目錄的正式 Worker 無關、不共用資料庫）
+  // 部署步驟見 qbank/docs/07_雲端測試版部署.md。自訂網域不寫在這裡：部署後在 Cloudflare 後台
+  // Workers → 本 Worker → Settings → Domains & Routes 加入，或用 wrangler.local.jsonc（不進版控）覆寫。
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "qbank-test",
+  "main": "worker.js",
+  "compatibility_date": "2026-07-18",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "observability": { "enabled": true },
+  "assets": {
+    "directory": "./ui",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  "vars": { "QBANK_DB_LABEL": "qbank-test" },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "qbank-test",
+      "database_id": "00000000-0000-0000-0000-000000000000"
+    }
+  ]
+}

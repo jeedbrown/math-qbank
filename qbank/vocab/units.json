@@ -1,0 +1,36 @@
+{
+  "name": "國小數學單元分類（草案）",
+  "version": "2026-10-24-draft",
+  "status": "待裁定",
+  "note": "交辦第 5.3 節只給概念示例，沒有正式分類表；共用分類正本本次無法取得。此處以課綱四大主題為第一層、課綱條目常見名稱為第二層的草案，供教師審核時挑選。驗證時 draft 單元可被接受但會標示「草案單元」，不視為正式分類。",
+  "level1": [
+    { "code": "U-N", "label": "數與量", "theme_code": "N" },
+    { "code": "U-S", "label": "空間與形狀", "theme_code": "S" },
+    { "code": "U-R", "label": "關係", "theme_code": "R" },
+    { "code": "U-D", "label": "資料與不確定性", "theme_code": "D" }
+  ],
+  "level2_draft": [
+    { "code": "U-N-01", "parent": "U-N", "label": "整數概念與位值" },
+    { "code": "U-N-02", "parent": "U-N", "label": "加法與減法" },
+    { "code": "U-N-03", "parent": "U-N", "label": "乘法與除法" },
+    { "code": "U-N-04", "parent": "U-N", "label": "四則運算與解題" },
+    { "code": "U-N-05", "parent": "U-N", "label": "因數與倍數" },
+    { "code": "U-N-06", "parent": "U-N", "label": "分數" },
+    { "code": "U-N-07", "parent": "U-N", "label": "小數" },
+    { "code": "U-N-08", "parent": "U-N", "label": "比、比例與百分率" },
+    { "code": "U-N-09", "parent": "U-N", "label": "量與測量（長度、重量、容量、時間）" },
+    { "code": "U-N-10", "parent": "U-N", "label": "速率與單位換算" },
+    { "code": "U-S-01", "parent": "U-S", "label": "平面圖形與立體形體" },
+    { "code": "U-S-02", "parent": "U-S", "label": "角度與旋轉" },
+    { "code": "U-S-03", "parent": "U-S", "label": "周長與面積" },
+    { "code": "U-S-04", "parent": "U-S", "label": "體積與表面積" },
+    { "code": "U-S-05", "parent": "U-S", "label": "對稱、縮放與空間位置" },
+    { "code": "U-R-01", "parent": "U-R", "label": "規律與數列" },
+    { "code": "U-R-02", "parent": "U-R", "label": "數量關係與算式" },
+    { "code": "U-R-03", "parent": "U-R", "label": "計數原理與排列" },
+    { "code": "U-R-04", "parent": "U-R", "label": "邏輯推理與問題解決" },
+    { "code": "U-D-01", "parent": "U-D", "label": "統計圖表" },
+    { "code": "U-D-02", "parent": "U-D", "label": "平均數" },
+    { "code": "U-D-03", "parent": "U-D", "label": "可能性（機率前置）" }
+  ]
+}
