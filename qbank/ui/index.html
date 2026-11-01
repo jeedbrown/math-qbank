@@ -101,7 +101,7 @@
       <button class="btn secondary" id="btnSelectAll">全選結果</button>
       <span class="small muted" id="selCount"></span>
     </div>
-    <div style="overflow:auto; max-height:70vh"><table id="searchTable"><thead><tr><th></th><th>題目 ID</th><th>來源／套別</th><th>題號</th><th>原始年級</th><th>主題</th><th>對應課程</th><th>分析狀態</th><th>旗標</th><th>AI 類題</th></tr></thead><tbody></tbody></table></div>
+    <p id="searchStatus" role="status" aria-live="polite">選擇題庫來源後按搜尋；關鍵字留空可列出該題庫。</p><div style="overflow:auto; max-height:70vh"><table id="searchTable"><thead><tr><th></th><th>題目 ID</th><th>來源／套別</th><th>題號</th><th>原始年級</th><th>主題</th><th>對應課程</th><th>分析狀態</th><th>旗標</th><th>AI 類題</th></tr></thead><tbody></tbody></table></div>
     <div class="row sticky-actions"><button class="btn" id="btnToBatch">勾選題目 → 產生 AI 分析指令</button> <button class="btn secondary" id="btnToVariant">勾選題目 → 產生類題指令</button></div>
   </div>
 </section>
@@ -207,7 +207,8 @@
 const $ = s => document.querySelector(s);
 // 題庫原始資料保留原始來源；前台統一以目前品牌名稱呈現，避免再顯示舊名稱。
 const displayName = s => String(s ?? '').replaceAll('凱爺數學', 'K數學').replaceAll('凱爺', 'K');
-const esc = s => displayName(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+const escapeValue = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+const esc = s => escapeValue(displayName(s));
 const api = async (p, opts = {}) => {
   const r = await fetch(p, { headers: { 'Content-Type': 'application/json' }, ...opts, body: opts.body ? JSON.stringify(opts.body) : undefined });
   const ct = r.headers.get('content-type') || '';
@@ -242,7 +243,7 @@ async function loadOverview() {
   const q = await api('/api/review-queue?status=pending');
   $('#reviewQueue').innerHTML = q.length ? '<table><tr><th>分析</th><th>題目</th><th>來源</th><th>主題</th><th>分析來源</th><th>建立時間</th><th></th></tr>' + q.map(r => `<tr><td>#${r.id}</td><td><a class="link" onclick="openDetail('${r.question_id}')">${r.question_id}</a>${r.stale ? ' <span class="tag bad">題目已更新</span>' : ''}</td><td>${esc(r.source_bank)}／${esc(r.set_name)}／${esc(r.item_no)}</td><td>${esc(r.topic)}</td><td>${esc(r.source)}</td><td>${esc(r.created_at.slice(0, 16))}</td><td><a class="link" onclick="openDetail('${r.question_id}')">審核</a></td></tr>`).join('') + '</table>' : '<span class="muted">目前沒有待審核的分析。</span>';
 }
-function fillSelect(sel, items) { const el = $(sel); const first = el.options[0].outerHTML; el.innerHTML = first + items.map(i => `<option value="${esc(i.v)}">${esc(i.v)}（${i.c}）</option>`).join(''); }
+function fillSelect(sel, items) { const el = $(sel); const first = el.options[0].outerHTML; el.innerHTML = first + items.map(i => `<option value="${escapeValue(i.v)}">${esc(i.v)}（${i.c}）</option>`).join(''); }
 
 // 匯入
 let importCsvText = null;
@@ -269,13 +270,19 @@ $('#btnCommit').addEventListener('click', async () => {
 // 搜尋
 $('#btnSearch').addEventListener('click', doSearch);
 async function doSearch() {
-  const params = new URLSearchParams();
+  const status = $('#searchStatus'), button = $('#btnSearch');
+  status.textContent = '搜尋中…'; button.disabled = true;
+  try {
+  const params = new URLSearchParams({limit:'1000'});
   const map = { q:'#sq', source_bank:'#sBank', set_name:'#sSet', source_grade:'#sSrcGrade', grade:'#sGrade', code:'#sCode', unit:'#sUnit', skill:'#sSkill', misconception:'#sMis', project:'#sProject', review_status:'#sStatus', flag:'#sFlag' };
   for (const [k, s] of Object.entries(map)) { const v = $(s).value.trim(); if (v) params.set(k, v); }
   const rows = await api('/api/questions?' + params.toString());
   $('#searchTable tbody').innerHTML = rows.map(r => `<tr><td><input type="checkbox" data-id="${r.id}" ${selected.has(r.id) ? 'checked' : ''}></td><td><a class="link" onclick="openDetail('${r.id}')">${r.id}</a></td><td>${esc(r.source_bank)}／${esc(r.set_name)}</td><td>${esc(r.item_no)}</td><td>${esc(r.source_grade)}</td><td>${esc(r.topic)}</td><td>${esc(r.course_ref)}</td><td><span class="tag ${r.analysis_status === 'confirmed' ? 'ok' : r.analysis_status === 'pending' ? 'warn' : 'muted'}">${STATUS_LABEL[r.analysis_status || 'none']}</span></td><td>${r.flag_count ? `<span class="tag warn">${r.flag_count}</span>` : ''}</td><td>${r.ai_variants || ''}</td></tr>`).join('') || '<tr><td colspan="10" class="muted">沒有符合的題目</td></tr>';
   document.querySelectorAll('#searchTable input[type=checkbox]').forEach(cb => cb.addEventListener('change', () => { cb.checked ? selected.add(cb.dataset.id) : selected.delete(cb.dataset.id); updateSel(); }));
   updateSel();
+  status.textContent = `已列出 ${rows.length} 題，依來源、套別及題號排序。` + (rows.length === 1000 ? '本次最多顯示 1000 題，請再選套別縮小範圍。' : '點題目 ID 查看完整題目。');
+  } catch (error) { status.textContent = '搜尋失敗：' + error.message; }
+  finally { button.disabled = false; }
 }
 function updateSel() { $('#selCount').textContent = `已勾選 ${selected.size} 題`; $('#batchSel').textContent = selected.size; $('#varSel').textContent = selected.size; }
 $('#btnSelectAll').addEventListener('click', () => { document.querySelectorAll('#searchTable input[type=checkbox]').forEach(cb => { cb.checked = true; selected.add(cb.dataset.id); }); updateSel(); });

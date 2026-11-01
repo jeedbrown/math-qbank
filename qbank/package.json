@@ -6,7 +6,7 @@
   "engines": { "node": ">=22.13" },
   "scripts": {
     "start": "node server.js",
-    "test": "node --test test/qbank.test.js",
+    "test": "node --test test/*.test.js",
     "cli": "node cli.js"
   }
 }
