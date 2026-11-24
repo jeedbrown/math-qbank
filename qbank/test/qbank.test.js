@@ -94,6 +94,59 @@ test('匯入：範例 8 題全部匯入、21 欄原樣保留、重複匯入不�
   assert.equal((await db.get('SELECT COUNT(*) c FROM questions')).c, 8);
 });
 
+test('匯入：題幹與類題不變時，只更新附加欄，不升版本、不改解答', async () => {
+  const db = freshDb();
+  await importSample(db);
+  const q = await firstQuestion(db);
+  const beforeRaw = { ...q.raw };
+  const beforeFp = q.fingerprint;
+  const src = importer.readSourceFile(SAMPLE);
+  // 同一批題加上改編選擇題／改選解答，21 欄正文不動
+  for (const rec of src.records) {
+    rec.values['改編選擇題'] = '（A）1（B）2（C）3（D）4';
+    rec.values['改選解答'] = '（B）';
+  }
+  const preview = await importer.previewImport(db, src);
+  assert.equal(preview.summary.extra_update, 8);
+  assert.equal(preview.summary.new_version, 0);
+  assert.equal(preview.summary.unchanged, 0);
+  assert.equal(preview.summary.reject, 0);
+  assert.deepEqual(preview.items[0].extraFields, ['改編選擇題', '改選解答']);
+  const r = await importer.commitImport(db, src, 'mcq.csv');
+  assert.equal(r.result.extraUpdated, 8);
+  assert.equal(r.result.newVersions, 0);
+  assert.equal(r.result.inserted, 0);
+  assert.equal(r.result.unchanged, 0);
+  const q2 = await importer.getQuestion(db, q.id);
+  assert.equal(q2.current_version, 1);
+  assert.equal(q2.versions.length, 1);
+  assert.equal(q2.fingerprint, beforeFp);
+  for (const c of ids.ORIGINAL_COLUMNS) assert.equal(q2.raw[c], beforeRaw[c], '不得改動欄位 ' + c);
+  assert.equal(q2.raw['_extra:改編選擇題'], '（A）1（B）2（C）3（D）4');
+  assert.equal(q2.raw['_extra:改選解答'], '（B）');
+  // 再匯入一次應為不變
+  const again = await importer.commitImport(db, src, 'mcq.csv');
+  assert.equal(again.result.unchanged, 8);
+  assert.equal(again.result.extraUpdated, 0);
+  // 若附加欄試圖改既有解答，應拒絕且解答維持原樣
+  const withAns = importer.readSourceFile(SAMPLE);
+  for (const rec of withAns.records) {
+    rec.values['解答'] = '原解答';
+    rec.values['改編選擇題'] = '（A）1（B）2（C）3（D）4';
+    rec.values['改選解答'] = '（B）';
+  }
+  const first = await importer.commitImport(db, withAns, 'ans.csv');
+  assert.equal(first.result.extraUpdated, 8);
+  assert.equal((await importer.getQuestion(db, q.id)).raw['_extra:解答'], '原解答');
+  for (const rec of withAns.records) rec.values['解答'] = '被改掉的解答';
+  const blocked = await importer.commitImport(db, withAns, 'ans-bad.csv');
+  assert.equal(blocked.result.rejected, 8);
+  assert.equal(blocked.result.extraUpdated, 0);
+  assert.equal((await importer.getQuestion(db, q.id)).raw['_extra:解答'], '原解答');
+  assert.equal((await importer.getQuestion(db, q.id)).current_version, 1);
+  assert.equal((await importer.getQuestion(db, q.id)).raw['_extra:改編選擇題'], '（A）1（B）2（C）3（D）4');
+});
+
 test('匯入：缺必填欄位、欄數不符、身分鍵重複的列被拒絕，其餘仍匯入', async () => {
   const db = freshDb();
   const header = ids.ORIGINAL_COLUMNS.join(',');

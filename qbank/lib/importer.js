@@ -5,6 +5,39 @@ const { nowIso } = require('./util');
 
 const REQUIRED = ['題庫來源', '套別', '題號', '題目'];
 
+// 解答／詳解已在第一次匯入時以附加欄寫入；後續若只補其他附加欄，不得改這兩欄。
+const PROTECTED_EXTRAS = new Set(['解答', '詳解']);
+
+function incomingExtras(v) {
+  const out = {};
+  for (const c of Object.keys(v)) {
+    if (!ORIGINAL_COLUMNS.includes(c)) out[c] = v[c] == null ? '' : v[c];
+  }
+  return out;
+}
+
+function normalizeExtra(s) {
+  return String(s ?? '').replace(/\r\n?/g, '\n');
+}
+
+// 比對既有 raw_json 與本次附加欄。只報告「新增值或改到非保護欄」；保護欄若不同則列入衝突。
+// 既有 raw 裡有、本次沒帶的附加欄一律保留。
+function diffExtras(existingRaw, incoming) {
+  const updates = [];
+  const conflicts = [];
+  for (const [name, neu] of Object.entries(incoming)) {
+    const old = existingRaw['_extra:' + name] ?? existingRaw[name] ?? '';
+    if (normalizeExtra(old) === normalizeExtra(neu)) continue;
+    if (PROTECTED_EXTRAS.has(name)) {
+      // 本次沒帶值：維持既有，不當衝突。既有為空才允許第一次寫入解答／詳解；已有內容不得改。
+      if (!normalizeExtra(neu)) continue;
+      if (!normalizeExtra(old)) updates.push(name);
+      else conflicts.push(name);
+    } else updates.push(name);
+  }
+  return { updates, conflicts };
+}
+
 // 讀取 CSV 或 JSON（陣列物件）為原始列（只在 Node 端使用）
 function readSourceFile(filePath) {
   const fs = require('node:fs');
@@ -45,7 +78,7 @@ function rowFlags(v) {
   return flags;
 }
 
-// 預覽：不寫入，回報每列會發生什麼（新增／新版本／不變／拒絕）
+// 預覽：不寫入，回報每列會發生什麼（新增／新版本／附加欄更新／不變／拒絕）
 async function previewImport(db, source) {
   const { header, records } = source;
   const cols = detectColumns(header);
@@ -61,26 +94,46 @@ async function previewImport(db, source) {
     else seenKeys.set(key, rec.rowNumber);
     let action = 'insert';
     let existing = null;
+    let extraUpdates = [];
     if (problems.length) action = 'reject';
     else {
       existing = await db.get('SELECT id, current_version, fingerprint FROM questions WHERE identity_key = ?', key);
-      if (existing) action = existing.fingerprint === contentFingerprint(v) ? 'unchanged' : 'new_version';
+      if (existing) {
+        if (existing.fingerprint !== contentFingerprint(v)) {
+          action = 'new_version';
+        } else {
+          const ver = await db.get('SELECT raw_json FROM question_versions WHERE question_id = ? AND version = ?', existing.id, existing.current_version);
+          const raw = ver && ver.raw_json ? JSON.parse(ver.raw_json) : {};
+          const { updates, conflicts } = diffExtras(raw, incomingExtras(v));
+          if (conflicts.length) {
+            action = 'reject';
+            problems.push('附加欄將更動既有「' + conflicts.join('、') + '」，已拒絕（題幹未變時不得改解答／詳解）');
+          } else if (updates.length) {
+            action = 'extra_update';
+            extraUpdates = updates;
+          } else {
+            action = 'unchanged';
+          }
+        }
+      }
     }
     items.push({
       rowNumber: rec.rowNumber, action, problems,
       questionId: problems.length ? null : questionId(v),
       identityKey: key,
       existingVersion: existing ? existing.current_version : null,
+      extraFields: extraUpdates,
       flags: rowFlags(v),
       preview: { 題庫來源: v['題庫來源'], 套別: v['套別'], 題號: v['題號'], 主題: v['主題'], 題目摘要: normalize(v['題目']).slice(0, 40) },
     });
   }
   const summary = { total: items.length };
-  for (const a of ['insert', 'new_version', 'unchanged', 'reject']) summary[a] = items.filter(i => i.action === a).length;
+  for (const a of ['insert', 'new_version', 'extra_update', 'unchanged', 'reject']) summary[a] = items.filter(i => i.action === a).length;
   return { columns: cols, summary, items };
 }
 
 // 正式匯入：原始欄位全部保留在 raw_json；同題重複匯入不建新題；內容變動才建新版本。
+// 題幹指紋不變、只多了附加欄時，更新目前版本的 raw_json，不升版本。
 async function commitImport(db, source, sourceFile, opts = {}) {
   const preview = await previewImport(db, source);
   if (preview.columns.requiredMissing.length && !opts.force) {
@@ -90,12 +143,29 @@ async function commitImport(db, source, sourceFile, opts = {}) {
   const batch = await db.run('INSERT INTO import_batches (source_file, started_at, total_rows) VALUES (?, ?, ?)', sourceFile, ts, source.records.length);
   const batchId = batch.lastInsertRowid;
   const byRow = new Map(source.records.map(r => [r.rowNumber, r.values]));
-  const result = { batchId, inserted: 0, newVersions: 0, unchanged: 0, rejected: 0, rejectedRows: [], newVersionIds: [] };
+  const result = { batchId, inserted: 0, newVersions: 0, extraUpdated: 0, unchanged: 0, rejected: 0, rejectedRows: [], newVersionIds: [], extraUpdatedIds: [] };
   await db.tx(async () => {
     for (const it of preview.items) {
       const v = byRow.get(it.rowNumber);
       if (it.action === 'reject') { result.rejected++; result.rejectedRows.push({ rowNumber: it.rowNumber, problems: it.problems }); continue; }
       if (it.action === 'unchanged') { result.unchanged++; continue; }
+      if (it.action === 'extra_update') {
+        const ver = await db.get('SELECT raw_json FROM question_versions WHERE question_id = ? AND version = ?', it.questionId, it.existingVersion);
+        const raw = ver && ver.raw_json ? JSON.parse(ver.raw_json) : {};
+        const incoming = incomingExtras(v);
+        const { updates, conflicts } = diffExtras(raw, incoming);
+        if (conflicts.length) {
+          result.rejected++;
+          result.rejectedRows.push({ rowNumber: it.rowNumber, problems: ['附加欄將更動既有「' + conflicts.join('、') + '」'] });
+          continue;
+        }
+        for (const name of updates) raw['_extra:' + name] = incoming[name];
+        await db.run('UPDATE question_versions SET raw_json = ? WHERE question_id = ? AND version = ?', JSON.stringify(raw), it.questionId, it.existingVersion);
+        await db.run('UPDATE questions SET updated_at = ? WHERE id = ?', ts, it.questionId);
+        result.extraUpdated++;
+        result.extraUpdatedIds.push(it.questionId);
+        continue;
+      }
       const raw = {};
       for (const c of ORIGINAL_COLUMNS) raw[c] = v[c] === undefined ? '' : v[c];
       for (const c of Object.keys(v)) if (!(c in raw)) raw['_extra:' + c] = v[c];
@@ -118,7 +188,7 @@ async function commitImport(db, source, sourceFile, opts = {}) {
       for (const f of it.flags) await db.run('INSERT OR REPLACE INTO question_flags (question_id, version, flag, detail) VALUES (?, ?, ?, ?)', it.questionId, version, f.flag, f.detail);
     }
     await db.run('UPDATE import_batches SET finished_at = ?, inserted = ?, new_versions = ?, unchanged = ?, rejected = ?, report_json = ? WHERE id = ?',
-      nowIso(), result.inserted, result.newVersions, result.unchanged, result.rejected, JSON.stringify({ columns: preview.columns, rejectedRows: result.rejectedRows }), batchId);
+      nowIso(), result.inserted, result.newVersions, result.unchanged, result.rejected, JSON.stringify({ columns: preview.columns, rejectedRows: result.rejectedRows, extraUpdated: result.extraUpdated, extraUpdatedIds: result.extraUpdatedIds }), batchId);
   });
   return { preview, result };
 }
@@ -132,4 +202,4 @@ async function getQuestion(db, id) {
   return { ...q, raw: JSON.parse(ver.raw_json), flags, versions };
 }
 
-module.exports = { readSourceFile, sourceFromRecords, detectColumns, previewImport, commitImport, rowFlags, getQuestion, REQUIRED };
+module.exports = { readSourceFile, sourceFromRecords, detectColumns, previewImport, commitImport, rowFlags, getQuestion, REQUIRED, incomingExtras, diffExtras, PROTECTED_EXTRAS };
